@@ -28,7 +28,17 @@ def test_audit_records_flow_from_kafka_to_postgres_and_the_archive(
     from confluent_kafka.admin import AdminClient, NewTopic
 
     topic = f"audit.test.{uuid.uuid4().hex[:8]}"
-    AdminClient({"bootstrap.servers": KAFKA}).create_topics([NewTopic(topic, 2, 1)])[topic].result(30)
+    admin = AdminClient({"bootstrap.servers": KAFKA})  # keep a reference: its futures need the handle
+    deadline = time.monotonic() + 60
+    while True:  # the broker container may still be starting
+        try:
+            admin.list_topics(timeout=5)
+            break
+        except Exception:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(2)
+    admin.create_topics([NewTopic(topic, 2, 1)])[topic].result(30)
     p = Producer({"bootstrap.servers": KAFKA, "enable.idempotence": True, "acks": "all"})
     sent = [event(ids=(f"p-{i}",)) for i in range(6)]
     for e in sent:
